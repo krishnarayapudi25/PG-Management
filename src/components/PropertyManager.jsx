@@ -153,15 +153,15 @@ export default function PropertyManager({ externalGuestToOpen, onExternalGuestHa
             const roomsSnap = await getDocs(collection(db, 'rooms'));
             const roomsData = roomsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // Fetch tenants for each room
-            for (let room of roomsData) {
-                const tenantsQuery = query(collection(db, 'users'), where('roomId', '==', room.id));
-                const tenantsSnap = await getDocs(tenantsQuery);
-                // Filter out rejected and deleted tenants
-                room.tenants = tenantsSnap.docs
-                    .map(d => ({ id: d.id, ...d.data() }))
-                    .filter(u => u.accountStatus !== 'rejected' && !u.deleted);
+            // Fetch ALL users once (instead of 1 query per room)
+            const allUsersSnap = await getDocs(collection(db, 'users'));
+            const allUsers = allUsersSnap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter(u => u.accountStatus !== 'rejected' && !u.deleted);
 
+            // Group users by roomId
+            for (let room of roomsData) {
+                room.tenants = allUsers.filter(u => u.roomId === room.id);
                 room.occupiedBeds = room.tenants.length;
             }
 

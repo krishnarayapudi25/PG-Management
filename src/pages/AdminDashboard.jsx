@@ -150,15 +150,15 @@ export default function AdminDashboard() {
 
             const paymentsQuery = query(collection(db, "payments"));
             const paymentsSnap = await getDocs(paymentsQuery);
-            
+
             // Enrich payments with user details
             const paymentsData = paymentsSnap.docs.map(doc => {
                 const data = doc.data();
-                const user = usersData.find(u => u.id === data.userId) || 
-                             usersData.find(u => u.phone === data.userPhone);
-                
-                return { 
-                    id: doc.id, 
+                const user = usersData.find(u => u.id === data.userId) ||
+                    usersData.find(u => u.phone === data.userPhone);
+
+                return {
+                    id: doc.id,
                     ...data,
                     userName: user ? user.fullName : (data.userName || 'Unknown Guest')
                 };
@@ -422,15 +422,9 @@ export default function AdminDashboard() {
         .filter(u => u.accountStatus === 'active')
         .map(u => {
             const dueInfo = getPaymentDueStatus(u);
-            console.log(`User: ${u.fullName}, Phone: ${u.phone}, Status: ${dueInfo.status}, Pending: ₹${dueInfo.pendingAmount}, Days: ${dueInfo.daysRemaining}`);
             return { ...u, dueInfo };
         })
         .sort((a, b) => a.dueInfo.daysRemaining - b.dueInfo.daysRemaining);
-
-    console.log('=== SUMMARY ===');
-    console.log('Total active users:', activeUsers.length);
-    console.log('Users with due status:', usersWithDueStatus.length);
-    console.log('Total payments in system:', payments.length);
 
     // Filter users by payment due status
     // Filter users by payment due status and search query
@@ -659,75 +653,85 @@ export default function AdminDashboard() {
                                     </div>
                                 </div>
 
-                                {/* Financial Summary */}
-                                <div style={styles.guestModalSection}>
-                                    <h3 style={styles.guestModalSectionTitle}>💰 Financial Summary</h3>
-                                    <div className="guestModalStats" style={styles.guestModalStats}>
-                                        <div style={styles.guestModalStat}>
-                                            <span style={styles.guestModalStatValue}>
-                                                ₹{formatCurrency(getUserPayments(selectedUser.id, selectedUser.phone).filter(p => p.status === 'pending').reduce((sum, p) => sum + (p.amount || 0), 0))}
-                                            </span>
-                                            <span style={styles.guestModalStatLabel}>Pending Amount</span>
-                                        </div>
-                                        <div style={{ ...styles.guestModalStat, borderColor: '#22c55e' }}>
-                                            <span style={{ ...styles.guestModalStatValue, color: '#22c55e' }}>
-                                                ₹{formatCurrency(getUserPayments(selectedUser.id, selectedUser.phone).filter(p => p.status === 'approved').reduce((sum, p) => sum + (p.amount || 0), 0))}
-                                            </span>
-                                            <span style={styles.guestModalStatLabel}>Total Paid</span>
-                                        </div>
-                                        <div style={{ ...styles.guestModalStat, borderColor: '#fbbf24' }}>
-                                            <span style={{ ...styles.guestModalStatValue, color: '#fbbf24' }}>
-                                                ₹{formatCurrency(getUserPayments(selectedUser.id, selectedUser.phone).filter(p => p.status === 'pending').reduce((sum, p) => sum + (p.amount || 0), 0))}
-                                            </span>
-                                            <span style={styles.guestModalStatLabel}>Pending</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* ID Proof */}
-                                {(selectedUser.idProofUrl || selectedUser.idProofBase64) && (
-                                    <div style={styles.guestModalSection}>
-                                        <h3 style={styles.guestModalSectionTitle}>📄 ID Proof</h3>
-                                        <img
-                                            src={selectedUser.idProofUrl || selectedUser.idProofBase64}
-                                            style={styles.guestModalIdProof}
-                                            alt="ID Proof"
-                                            onClick={() => setViewingImage(selectedUser.idProofUrl || selectedUser.idProofBase64)}
-                                        />
-                                    </div>
-                                )}
-
-                                {/* Payment History */}
-                                <div style={styles.guestModalSection}>
-                                    <h3 style={styles.guestModalSectionTitle}>📜 Payment History ({getUserPayments(selectedUser.id, selectedUser.phone).length})</h3>
-                                    {getUserPayments(selectedUser.id, selectedUser.phone).length === 0 ? (
-                                        <p style={styles.guestModalEmpty}>No payment records found</p>
-                                    ) : (
-                                        <div style={styles.guestModalPayments}>
-                                            {getUserPayments(selectedUser.id, selectedUser.phone).map(payment => (
-                                                <div key={payment.id} style={{
-                                                    ...styles.guestModalPayment,
-                                                    borderLeftColor: payment.status === 'approved' ? '#22c55e' :
-                                                        payment.status === 'rejected' ? '#ef4444' : '#fbbf24'
-                                                }}>
-                                                    <div style={styles.guestModalPaymentTop}>
-                                                        <span style={styles.guestModalPaymentAmount}>₹{formatCurrency(payment.amount)}</span>
-                                                        <span style={{
-                                                            ...styles.guestModalPaymentStatus,
-                                                            color: payment.status === 'approved' ? '#22c55e' :
-                                                                payment.status === 'rejected' ? '#ef4444' : '#fbbf24'
-                                                        }}>{payment.status?.toUpperCase()}</span>
+                                {/* Cache payments for this user — computed once instead of 5 times */}
+                                {(() => {
+                                    const selectedUserPayments = getUserPayments(selectedUser.id, selectedUser.phone);
+                                    const pendingTotal = selectedUserPayments.filter(p => p.status === 'pending').reduce((sum, p) => sum + (p.amount || 0), 0);
+                                    const approvedTotal = selectedUserPayments.filter(p => p.status === 'approved').reduce((sum, p) => sum + (p.amount || 0), 0);
+                                    return (
+                                        <>
+                                            {/* Financial Summary */}
+                                            <div style={styles.guestModalSection}>
+                                                <h3 style={styles.guestModalSectionTitle}>💰 Financial Summary</h3>
+                                                <div className="guestModalStats" style={styles.guestModalStats}>
+                                                    <div style={styles.guestModalStat}>
+                                                        <span style={styles.guestModalStatValue}>
+                                                            ₹{formatCurrency(pendingTotal)}
+                                                        </span>
+                                                        <span style={styles.guestModalStatLabel}>Pending Amount</span>
                                                     </div>
-                                                    <div style={styles.guestModalPaymentMeta}>
-                                                        <span>📅 {safeDate(payment.createdAt)}</span>
-                                                        {payment.paymentDate && <span>• Scheduled: {payment.paymentDate} {payment.paymentTime}</span>}
+                                                    <div style={{ ...styles.guestModalStat, borderColor: '#22c55e' }}>
+                                                        <span style={{ ...styles.guestModalStatValue, color: '#22c55e' }}>
+                                                            ₹{formatCurrency(approvedTotal)}
+                                                        </span>
+                                                        <span style={styles.guestModalStatLabel}>Total Paid</span>
                                                     </div>
-                                                    {payment.note && <p style={styles.guestModalPaymentNote}>"{payment.note}"</p>}
+                                                    <div style={{ ...styles.guestModalStat, borderColor: '#fbbf24' }}>
+                                                        <span style={{ ...styles.guestModalStatValue, color: '#fbbf24' }}>
+                                                            ₹{formatCurrency(pendingTotal)}
+                                                        </span>
+                                                        <span style={styles.guestModalStatLabel}>Pending</span>
+                                                    </div>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
+                                            </div>
+
+                                            {/* ID Proof */}
+                                            {(selectedUser.idProofUrl || selectedUser.idProofBase64) && (
+                                                <div style={styles.guestModalSection}>
+                                                    <h3 style={styles.guestModalSectionTitle}>📄 ID Proof</h3>
+                                                    <img
+                                                        src={selectedUser.idProofUrl || selectedUser.idProofBase64}
+                                                        style={styles.guestModalIdProof}
+                                                        alt="ID Proof"
+                                                        onClick={() => setViewingImage(selectedUser.idProofUrl || selectedUser.idProofBase64)}
+                                                    />
+                                                </div>
+                                            )}
+
+                                            {/* Payment History */}
+                                            <div style={styles.guestModalSection}>
+                                                <h3 style={styles.guestModalSectionTitle}>📜 Payment History ({selectedUserPayments.length})</h3>
+                                                {selectedUserPayments.length === 0 ? (
+                                                    <p style={styles.guestModalEmpty}>No payment records found</p>
+                                                ) : (
+                                                    <div style={styles.guestModalPayments}>
+                                                        {selectedUserPayments.map(payment => (
+                                                            <div key={payment.id} style={{
+                                                                ...styles.guestModalPayment,
+                                                                borderLeftColor: payment.status === 'approved' ? '#22c55e' :
+                                                                    payment.status === 'rejected' ? '#ef4444' : '#fbbf24'
+                                                            }}>
+                                                                <div style={styles.guestModalPaymentTop}>
+                                                                    <span style={styles.guestModalPaymentAmount}>₹{formatCurrency(payment.amount)}</span>
+                                                                    <span style={{
+                                                                        ...styles.guestModalPaymentStatus,
+                                                                        color: payment.status === 'approved' ? '#22c55e' :
+                                                                            payment.status === 'rejected' ? '#ef4444' : '#fbbf24'
+                                                                    }}>{payment.status?.toUpperCase()}</span>
+                                                                </div>
+                                                                <div style={styles.guestModalPaymentMeta}>
+                                                                    <span>📅 {safeDate(payment.createdAt)}</span>
+                                                                    {payment.paymentDate && <span>• Scheduled: {payment.paymentDate} {payment.paymentTime}</span>}
+                                                                </div>
+                                                                {payment.note && <p style={styles.guestModalPaymentNote}>"{payment.note}"</p>}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </>
+                                    );
+                                })()}
                             </>
                         )}
                     </div>
