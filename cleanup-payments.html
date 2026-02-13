@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Data Cleanup Tool</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #667eea;
+            margin-top: 0;
+        }
+        .warning {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .info {
+            background: #dbeafe;
+            border-left: 4px solid #3b82f6;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d1fae5;
+            border-left: 4px solid #10b981;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        button:hover {
+            background: #5568d3;
+        }
+        button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+        #output {
+            background: #1f2937;
+            color: #f3f4f6;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            max-height: 500px;
+            overflow-y: auto;
+            margin-top: 20px;
+            display: none;
+        }
+        .step {
+            background: #f9fafb;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Payment Data Cleanup Tool</h1>
+
+        <div class="warning">
+            <strong>⚠️ WARNING:</strong> This tool will modify your Firestore database.
+            Make sure you have a backup before proceeding.
+        </div>
+
+        <div class="info">
+            <strong>📋 What this tool does:</strong>
+            <ul>
+                <li>Identifies payment records with incorrect userId values</li>
+                <li>Matches payments to users using phone numbers and names</li>
+                <li>Updates payment records with correct userId and userPhone</li>
+                <li>Adds missing phone numbers to existing correct payments</li>
+            </ul>
+        </div>
+
+        <div class="step">
+            <strong>Step 1:</strong> Make sure you're logged in to the admin dashboard
+        </div>
+
+        <div class="step">
+            <strong>Step 2:</strong> Click the button below to start the cleanup process
+        </div>
+
+        <button id="runButton" onclick="runCleanup()">
+            🚀 Start Cleanup Process
+        </button>
+
+        <div id="output"></div>
+
+        <div id="resultSummary" style="display: none; margin-top: 20px;"></div>
+    </div>
+
+    <script type="module">
+        import { db } from './src/services/firebase.js';
+        import { collection, getDocs, doc, updateDoc, query } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+
+        let outputDiv;
+        let resultDiv;
+        let runButton;
+
+        window.onload = function() {
+            outputDiv = document.getElementById('output');
+            resultDiv = document.getElementById('resultSummary');
+            runButton = document.getElementById('runButton');
+        };
+
+        function log(message, color = '#f3f4f6') {
+            outputDiv.style.display = 'block';
+            const line = document.createElement('div');
+            line.style.color = color;
+            line.textContent = message;
+            outputDiv.appendChild(line);
+            outputDiv.scrollTop = outputDiv.scrollHeight;
+        }
+
+        window.runCleanup = async function() {
+            if (!confirm('Are you sure you want to run the cleanup? This will modify your database.')) {
+                return;
+            }
+
+            runButton.disabled = true;
+            outputDiv.innerHTML = '';
+            outputDiv.style.display = 'block';
+            resultDiv.style.display = 'none';
+
+            log('🔧 Starting Payment Data Cleanup...', '#60a5fa');
+            log('');
+
+            try {
+                // Step 1: Load all users
+                log('📊 Loading users...', '#fbbf24');
+                const usersQuery = query(collection(db, 'users'));
+                const usersSnap = await getDocs(usersQuery);
+                const users = usersSnap.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                // Create phone-to-user mapping
+                const phoneMap = new Map();
+                users.forEach(user => {
+                    if (user.phone) {
+                        phoneMap.set(user.phone, user);
+                    }
+                });
+
+                log(`✅ Loaded ${users.length} users`, '#10b981');
+                log(`📞 Phone map size: ${phoneMap.size}`, '#10b981');
+                log('');
+
+                // Step 2: Load all payments
+                log('💳 Loading payments...', '#fbbf24');
+                const paymentsQuery = query(collection(db, 'payments'));
+                const paymentsSnap = await getDocs(paymentsQuery);
+                const payments = paymentsSnap.docs.map(doc => ({
+                    docId: doc.id,
+                    ...doc.data()
+                }));
+
+                log(`✅ Loaded ${payments.length} payments`, '#10b981');
+                log('');
+
+                // Step 3: Analyze and fix payments
+                log('🔍 Analyzing payments...', '#fbbf24');
+                log('');
+
+                let fixedCount = 0;
+                let alreadyCorrectCount = 0;
+                let cannotFixCount = 0;
+                const cannotFixPayments = [];
+
+                for (const payment of payments) {
+                    const matchedUser = users.find(u => u.id === payment.userId);
+
+                    if (matchedUser) {
+                        // Payment userId matches a user document ID - correct!
+                        alreadyCorrectCount++;
+
+                        // Add phone number if missing (for future resilience)
+                        if (!payment.userPhone && matchedUser.phone) {
+                            log(`📝 Adding phone to payment ${payment.docId}: ${matchedUser.phone}`, '#60a5fa');
+                            await updateDoc(doc(db, 'payments', payment.docId), {
+                                userPhone: matchedUser.phone
+                            });
+                            fixedCount++;
+                        }
+                    } else {
+                        // Payment userId doesn't match any user - needs fixing
+                        log(`❌ Orphaned payment: ${payment.docId}`, '#ef4444');
+                        log(`   Current userId: ${payment.userId}`);
+                        log(`   User: ${payment.userName || 'Unknown'}`);
+                        log(`   Phone in payment: ${payment.userPhone || 'Not set'}`);
+
+                        let fixedUserId = null;
+                        let fixMethod = null;
+
+                        // Try to fix using phone number in payment
+                        if (payment.userPhone) {
+                            const userByPhone = phoneMap.get(payment.userPhone);
+                            if (userByPhone) {
+                                fixedUserId = userByPhone.id;
+                                fixMethod = 'matched by userPhone';
+                            }
+                        }
+
+                        // Try to extract phone from email (e.g., 1234567890@hotel.com)
+                        if (!fixedUserId && payment.userEmail && payment.userEmail.includes('@hotel.com')) {
+                            const phoneFromEmail = payment.userEmail.split('@')[0];
+                            const userByEmailPhone = phoneMap.get(phoneFromEmail);
+                            if (userByEmailPhone) {
+                                fixedUserId = userByEmailPhone.id;
+                                fixMethod = 'extracted phone from email';
+                            }
+                        }
+
+                        // Try to match by userName
+                        if (!fixedUserId && payment.userName) {
+                            const userByName = users.find(u =>
+                                u.fullName && u.fullName.toLowerCase() === payment.userName.toLowerCase()
+                            );
+                            if (userByName) {
+                                fixedUserId = userByName.id;
+                                fixMethod = 'matched by userName';
+                            }
+                        }
+
+                        if (fixedUserId) {
+                            log(`✅ FIX FOUND: ${fixMethod}`, '#10b981');
+                            log(`   New userId: ${fixedUserId}`);
+
+                            const userToUpdate = users.find(u => u.id === fixedUserId);
+                            await updateDoc(doc(db, 'payments', payment.docId), {
+                                userId: fixedUserId,
+                                userPhone: userToUpdate.phone || payment.userPhone || ''
+                            });
+
+                            fixedCount++;
+                        } else {
+                            log(`⚠️  CANNOT FIX - No matching user found`, '#fbbf24');
+                            cannotFixCount++;
+                            cannotFixPayments.push(payment);
+                        }
+
+                        log('');
+                    }
+                }
+
+                // Step 4: Summary
+                log('='.repeat(60), '#60a5fa');
+                log('📊 CLEANUP SUMMARY', '#60a5fa');
+                log('='.repeat(60), '#60a5fa');
+                log(`Total payments processed: ${payments.length}`, '#f3f4f6');
+                log(`✅ Already correct: ${alreadyCorrectCount}`, '#10b981');
+                log(`🔧 Fixed: ${fixedCount}`, '#10b981');
+                log(`⚠️  Cannot fix: ${cannotFixCount}`, '#fbbf24');
+                log('='.repeat(60), '#60a5fa');
+
+                // Display result summary
+                resultDiv.style.display = 'block';
+                if (cannotFixCount === 0) {
+                    resultDiv.className = 'success';
+                    resultDiv.innerHTML = `
+                        <strong>✅ Cleanup Successful!</strong><br>
+                        All ${payments.length} payments have been processed.<br>
+                        ${fixedCount} payment(s) were fixed.<br><br>
+                        <strong>Next step:</strong> Refresh the admin dashboard to see the changes.
+                    `;
+                } else {
+                    resultDiv.className = 'warning';
+                    resultDiv.innerHTML = `
+                        <strong>⚠️ Cleanup Completed with Warnings</strong><br>
+                        ${fixedCount} payment(s) were fixed.<br>
+                        ${cannotFixCount} payment(s) could not be automatically fixed.<br><br>
+                        <strong>Manual action required:</strong><br>
+                        Check the console output above for details on orphaned payments.<br>
+                        You may need to manually delete test data or fix user IDs in Firestore Console.
+                    `;
+                }
+
+                log('\n✅ Cleanup complete! Refresh the admin dashboard page.', '#10b981');
+
+            } catch (error) {
+                log(`\n❌ Error during cleanup: ${error.message}`, '#ef4444');
+                console.error('Detailed error:', error);
+
+                resultDiv.style.display = 'block';
+                resultDiv.className = 'warning';
+                resultDiv.innerHTML = `
+                    <strong>❌ Error occurred</strong><br>
+                    ${error.message}<br><br>
+                    Check the browser console for more details.
+                `;
+            } finally {
+                runButton.disabled = false;
+            }
+        };
+    </script>
+</body>
+</html>

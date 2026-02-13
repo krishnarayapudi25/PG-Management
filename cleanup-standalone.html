@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Standalone Payment Cleanup</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; line-height: 1.6; }
+        .success { color: green; }
+        .error { color: red; }
+        .warning { color: orange; }
+        #output { background: #f0f0f0; padding: 15px; border-radius: 5px; margin-top: 20px; font-family: monospace; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; margin-top: 10px; }
+        input { padding: 10px; font-size: 16px; margin: 5px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <h1>Payment Cleanup Tool (Standalone)</h1>
+    
+    <div id="auth-section">
+        <h3>1. Login as Admin</h3>
+        <p>To write to the database, you must be authenticated as an admin.</p>
+        <input type="email" id="email" value="testadmin@admin.com" placeholder="Email">
+        <input type="password" id="password" placeholder="Password">
+        <button id="loginBtn">Login</button>
+        <div id="auth-message"></div>
+    </div>
+
+    <div id="cleanup-section" class="hidden">
+        <h3>2. Run Cleanup</h3>
+        <button id="runBtn">🚀 Start Cleanup</button>
+        <div id="output"></div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+        import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+        import { getFirestore, collection, getDocs, doc, updateDoc, query } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+
+        const firebaseConfig = {
+          apiKey: "AIzaSyDOcg2PHhY8JWK4LFqYEHNYuLUwpYoQwLE",
+          authDomain: "hotel-management-6b968.firebaseapp.com",
+          projectId: "hotel-management-6b968",
+          storageBucket: "hotel-management-6b968.firebasestorage.app",
+          messagingSenderId: "1006492735898",
+          appId: "1:1006492735898:web:9f1c1d281cddcbde444223",
+          measurementId: "G-38PLRBPKQL"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // UI Helpers
+        const log = (message, type = 'info') => {
+            const div = document.createElement('div');
+            div.textContent = message;
+            if (type === 'error') div.className = 'error';
+            if (type === 'success') div.className = 'success';
+            if (type === 'warning') div.className = 'warning';
+            document.getElementById('output').appendChild(div);
+        };
+
+        // Auth Logic
+        document.getElementById('loginBtn').onclick = async () => {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const statusDiv = document.getElementById('auth-message');
+            
+            if(!password) {
+                statusDiv.textContent = "Please enter a password";
+                statusDiv.className = "error";
+                return;
+            }
+
+            statusDiv.textContent = "Logging in...";
+            statusDiv.className = "";
+
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                statusDiv.textContent = "✅ Logged in successfully!";
+                statusDiv.className = "success";
+                
+                setTimeout(() => {
+                    document.getElementById('auth-section').classList.add('hidden');
+                    document.getElementById('cleanup-section').classList.remove('hidden');
+                }, 1000);
+            } catch (error) {
+                console.error(error);
+                statusDiv.textContent = "Login Failed: " + error.code;
+                statusDiv.className = "error";
+            }
+        };
+
+        // Cleanup Logic
+        document.getElementById('runBtn').onclick = async () => {
+            const runBtn = document.getElementById('runBtn');
+            runBtn.disabled = true;
+            document.getElementById('output').innerHTML = ''; // Clear previous
+            
+            log('Starting cleanup process...', 'info');
+
+            try {
+                // Step 1: Load all users
+                log('Loading users...', 'info');
+                const usersQuery = query(collection(db, 'users'));
+                const usersSnap = await getDocs(usersQuery);
+                const users = usersSnap.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                const phoneMap = new Map();
+                users.forEach(user => {
+                    if (user.phone) phoneMap.set(user.phone, user);
+                });
+                log(`Loaded ${users.length} users.`, 'success');
+
+                // Step 2: Load payments
+                log('Loading payments...', 'info');
+                const paymentsQuery = query(collection(db, 'payments'));
+                const paymentsSnap = await getDocs(paymentsQuery);
+                const payments = paymentsSnap.docs.map(doc => ({
+                    docId: doc.id,
+                    ...doc.data()
+                }));
+                log(`Loaded ${payments.length} payments.`, 'success');
+
+                let fixedCount = 0;
+                let alreadyCorrectCount = 0;
+                let cannotFixCount = 0;
+
+                for (const payment of payments) {
+                    const matchedUser = users.find(u => u.id === payment.userId);
+
+                    if (matchedUser) {
+                        alreadyCorrectCount++;
+                        // Add phone if missing
+                        if (!payment.userPhone && matchedUser.phone) {
+                            log(`Adding phone to existing valid payment ${payment.docId}`, 'warning');
+                            await updateDoc(doc(db, 'payments', payment.docId), {
+                                userPhone: matchedUser.phone
+                            });
+                            fixedCount++;
+                        }
+                    } else {
+                        log(`Found orphaned payment: ${payment.docId} (${payment.userName})`, 'error');
+                        let fixedUserId = null;
+                        
+                        // Fix Strategy 1: Phone
+                        if (payment.userPhone) {
+                            const u = phoneMap.get(payment.userPhone);
+                            if (u) {
+                                fixedUserId = u.id;
+                                log(` -> Matched by phone number!`, 'success');
+                            }
+                        }
+
+                        // Fix Strategy 2: Email phone extraction
+                        if (!fixedUserId && payment.userEmail && payment.userEmail.includes('@hotel.com')) {
+                            const phone = payment.userEmail.split('@')[0];
+                            const u = phoneMap.get(phone);
+                            if (u) {
+                                fixedUserId = u.id;
+                                log(` -> Matched by extracted phone from email!`, 'success');
+                            }
+                        }
+
+                        // Fix Strategy 3: Name match (weak)
+                        if (!fixedUserId && payment.userName) {
+                            const u = users.find(u => u.fullName && u.fullName.toLowerCase() === payment.userName.toLowerCase());
+                            if (u) {
+                                fixedUserId = u.id;
+                                log(` -> Matched by name!`, 'success');
+                            }
+                        }
+
+                        if (fixedUserId) {
+                             const userToUpdate = users.find(u => u.id === fixedUserId);
+                             await updateDoc(doc(db, 'payments', payment.docId), {
+                                userId: fixedUserId,
+                                userPhone: userToUpdate.phone || payment.userPhone || ''
+                            });
+                            fixedCount++;
+                            log(` -> Fixed and updated!`, 'success');
+                        } else {
+                            log(` -> Could not find matching user.`, 'error');
+                            cannotFixCount++;
+                        }
+                    }
+                }
+
+                log('-----------------------------------', 'info');
+                log(`Cleanup Complete!`, 'success');
+                log(`Fixed: ${fixedCount}`, 'success');
+                log(`Already Correct: ${alreadyCorrectCount}`, 'success');
+                log(`Unfixable: ${cannotFixCount}`, 'warning');
+
+                // Signal completion for reading
+                const doneDiv = document.createElement('div');
+                doneDiv.id = 'cleanup-done-signal';
+                document.body.appendChild(doneDiv);
+
+            } catch (error) {
+                log(`Error: ${error.message}`, 'error');
+                console.error(error);
+            } finally {
+                runBtn.disabled = false;
+            }
+        };
+    </script>
+</body>
+</html>
