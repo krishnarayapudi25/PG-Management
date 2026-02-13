@@ -15,7 +15,6 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        console.log("AuthProvider: Starting auth listener...");
 
         // Safety timeout to prevent infinite loading
         const safetyTimeout = setTimeout(() => {
@@ -27,7 +26,7 @@ export function AuthProvider({ children }) {
         }, 8000);
 
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-            console.log("AuthProvider: Auth state changed:", currentUser ? currentUser.email : "No user");
+
 
             try {
                 setUser(currentUser);
@@ -42,7 +41,6 @@ export function AuthProvider({ children }) {
 
                         // Strategy 2: If not found, search by email (handles re-added users)
                         if (!docSnap.exists() && currentUser.email) {
-                            console.log("AuthProvider: Doc not found by UID, searching by email...");
                             const emailQuery = query(
                                 collection(db, "users"),
                                 where("email", "==", currentUser.email)
@@ -53,14 +51,14 @@ export function AuthProvider({ children }) {
                                 const userDoc = emailSnap.docs[0];
                                 docSnap = userDoc;
                                 firestoreDocId = userDoc.id;
-                                console.log("AuthProvider: User found by email, doc ID:", firestoreDocId);
+
                             }
                         }
 
                         // Strategy 3: If not found, extract phone from email (phone@hotel.com format)
                         if (!docSnap.exists() && currentUser.email && currentUser.email.includes('@hotel.com')) {
                             const phone = currentUser.email.split('@')[0];
-                            console.log("AuthProvider: Searching by phone extracted from email:", phone);
+
 
                             const phoneQuery = query(
                                 collection(db, "users"),
@@ -72,19 +70,19 @@ export function AuthProvider({ children }) {
                                 const userDoc = phoneSnap.docs[0];
                                 docSnap = userDoc;
                                 firestoreDocId = userDoc.id;
-                                console.log("AuthProvider: User found by phone, doc ID:", firestoreDocId);
+
                             }
                         }
 
                         if (docSnap.exists()) {
-                            console.log("AuthProvider: User details loaded");
+
                             // Store both the user data AND the Firestore document ID
                             setUserDetails({
                                 ...docSnap.data(),
                                 firestoreDocId: firestoreDocId // CRITICAL: Store doc ID for payment matching
                             });
                         } else {
-                            console.log("AuthProvider: No user doc found");
+
                             setUserDetails(null);
                         }
                     } catch (error) {
@@ -97,14 +95,14 @@ export function AuthProvider({ children }) {
                 console.error("AuthProvider: Critical error in auth listener:", err);
             } finally {
                 // Ensure loading is set to false
-                console.log("AuthProvider: Setting loading to false");
+
                 setLoading(false);
                 clearTimeout(safetyTimeout);
             }
         });
 
         return () => {
-            console.log("AuthProvider: Cleaning up auth listener");
+
             clearTimeout(safetyTimeout);
             unsubscribe();
         };

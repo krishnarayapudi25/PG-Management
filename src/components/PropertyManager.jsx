@@ -1007,7 +1007,6 @@ export default function PropertyManager({ externalGuestToOpen, onExternalGuestHa
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         if (tenant) {
-                                                            console.log('Clicked tenant:', tenant);
                                                             setViewingGuest(tenant);
                                                         }
                                                     }}

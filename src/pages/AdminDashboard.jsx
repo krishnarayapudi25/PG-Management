@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db, auth } from '../services/firebase';
 import { collection, query, getDocs, doc, updateDoc, deleteDoc, Timestamp, where } from 'firebase/firestore';
@@ -79,7 +79,7 @@ export default function AdminDashboard() {
     }, [selectedUser]);
 
     // Filter guests based on search query
-    const filteredGuests = activeUsers.filter(user => {
+    const filteredGuests = useMemo(() => activeUsers.filter(user => {
         if (!guestSearch.trim()) return true;
         const query = guestSearch.toLowerCase();
 
@@ -95,7 +95,7 @@ export default function AdminDashboard() {
             safeSearch(user.roomName) ||
             safeSearch(user.floor)
         );
-    });
+    }), [activeUsers, guestSearch]);
 
     const getUserPayments = (userId, userPhone = null) => {
         // CRITICAL FIX: Smart payment matching with fallback logic
@@ -355,7 +355,7 @@ export default function AdminDashboard() {
         window.location.href = '/login';
     };
 
-    const approvedPayments = payments.filter(p => p.status === 'approved');
+    const approvedPayments = useMemo(() => payments.filter(p => p.status === 'approved'), [payments]);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -364,38 +364,38 @@ export default function AdminDashboard() {
         return payment.createdAt.seconds ? new Date(payment.createdAt.seconds * 1000) : new Date(payment.createdAt);
     };
 
-    const todayRevenue = approvedPayments
+    const todayRevenue = useMemo(() => approvedPayments
         .filter(p => getPaymentDate(p) >= today)
-        .reduce((sum, p) => sum + (p.amount || 0), 0);
+        .reduce((sum, p) => sum + (p.amount || 0), 0), [approvedPayments]);
 
     const weekStart = new Date(today);
     weekStart.setDate(today.getDate() - 7);
-    const weekRevenue = approvedPayments
+    const weekRevenue = useMemo(() => approvedPayments
         .filter(p => getPaymentDate(p) >= weekStart)
-        .reduce((sum, p) => sum + (p.amount || 0), 0);
+        .reduce((sum, p) => sum + (p.amount || 0), 0), [approvedPayments]);
 
     const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    const monthRevenue = approvedPayments
+    const monthRevenue = useMemo(() => approvedPayments
         .filter(p => getPaymentDate(p) >= monthStart)
-        .reduce((sum, p) => sum + (p.amount || 0), 0);
+        .reduce((sum, p) => sum + (p.amount || 0), 0), [approvedPayments]);
 
     const yearStart = new Date(today.getFullYear(), 0, 1);
-    const yearRevenue = approvedPayments
+    const yearRevenue = useMemo(() => approvedPayments
         .filter(p => getPaymentDate(p) >= yearStart)
-        .reduce((sum, p) => sum + (p.amount || 0), 0);
+        .reduce((sum, p) => sum + (p.amount || 0), 0), [approvedPayments]);
 
-    const pendingPayments = payments.filter(p => p.status === 'pending');
+    const pendingPayments = useMemo(() => payments.filter(p => p.status === 'pending'), [payments]);
 
-    const selectedDatePayments = payments.filter(p => {
+    const selectedDatePayments = useMemo(() => payments.filter(p => {
         const pDate = getPaymentDate(p);
         const filterDate = new Date(selectedDate);
         return p.status === 'approved' &&
             pDate.getDate() === filterDate.getDate() &&
             pDate.getMonth() === filterDate.getMonth() &&
             pDate.getFullYear() === filterDate.getFullYear();
-    });
+    }), [payments, selectedDate]);
 
-    const selectedDateTotal = selectedDatePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const selectedDateTotal = useMemo(() => selectedDatePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0), [selectedDatePayments]);
 
     const formatCurrency = (amount) => Number(amount || 0).toLocaleString('en-IN');
 
@@ -418,18 +418,16 @@ export default function AdminDashboard() {
     };
 
     // Get users with payment due info
-    const usersWithDueStatus = activeUsers
+    const usersWithDueStatus = useMemo(() => activeUsers
         .filter(u => u.accountStatus === 'active')
         .map(u => {
             const dueInfo = getPaymentDueStatus(u);
             return { ...u, dueInfo };
         })
-        .sort((a, b) => a.dueInfo.daysRemaining - b.dueInfo.daysRemaining);
+        .sort((a, b) => a.dueInfo.daysRemaining - b.dueInfo.daysRemaining), [activeUsers, payments]);
 
-    // Filter users by payment due status
     // Filter users by payment due status and search query
-    const filteredDueUsers = usersWithDueStatus.filter(u => {
-        // 1. Filter by Status
+    const filteredDueUsers = useMemo(() => usersWithDueStatus.filter(u => {
         let statusMatch = false;
         if (paymentDueFilter === 'all') statusMatch = u.dueInfo.status !== 'ok';
         else if (paymentDueFilter === 'overdue') statusMatch = u.dueInfo.status === 'overdue';
@@ -437,14 +435,13 @@ export default function AdminDashboard() {
 
         if (!statusMatch) return false;
 
-        // 2. Filter by Search Query (Name)
         if (!paymentDueSearch.trim()) return true;
         return (u.fullName || '').toLowerCase().includes(paymentDueSearch.toLowerCase());
-    });
+    }), [usersWithDueStatus, paymentDueFilter, paymentDueSearch]);
 
     // Count for badges
-    const overdueCount = usersWithDueStatus.filter(u => u.dueInfo.status === 'overdue').length;
-    const dueSoonCount = usersWithDueStatus.filter(u => u.dueInfo.status === 'due-soon').length;
+    const overdueCount = useMemo(() => usersWithDueStatus.filter(u => u.dueInfo.status === 'overdue').length, [usersWithDueStatus]);
+    const dueSoonCount = useMemo(() => usersWithDueStatus.filter(u => u.dueInfo.status === 'due-soon').length, [usersWithDueStatus]);
 
 
     const tabs = [
